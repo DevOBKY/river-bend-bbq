@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.ts";
+import { DemoModel } from "./demo-model.ts";
 import { resetDatabase } from "./db.ts";
 import { logEmailSender } from "./email.ts";
 import { answerQuestion, NO_ANSWER, searchFaq } from "./faq.ts";
@@ -16,6 +17,7 @@ const menu: MenuItem[] = [
 function fakeModel(answer: { json?: unknown; text?: string; error?: Error }) {
   const calls: { system: string; prompt: string }[] = [];
   const model: ModelClient = {
+    name: "fake",
     async generateJson({ system, prompt }) {
       calls.push({ system, prompt });
       if (answer.error) throw answer.error;
@@ -132,5 +134,27 @@ describe("catering routes", () => {
     const res = await post(createApp({ email: logEmailSender, model }), "/catering/suggest", { description: "Lunch for 12 coworkers" });
     expect(res.status).toBe(503);
     expect((await res.json()).error).toBe("Suggestions aren't available right now. You can still order from the menu.");
+  });
+});
+
+describe("DemoModel (rules, not AI)", () => {
+  it("plans from the headcount and the menu in the prompt", async () => {
+    const plan = await planCatering("Office lunch for 12 coworkers this Friday.", menu, new DemoModel());
+    expect(plan.headcount).toBe(12);
+    expect(plan.items.map((i) => [i.name, i.quantity])).toEqual([
+      ["Pulled pork (lb)", 4],
+      ["Burgoo (quart)", 1],
+      ["Banana pudding (pan)", 1],
+    ]);
+  });
+
+  it("says when it had to assume the headcount", async () => {
+    const plan = await planCatering("We need food for an event.", menu, new DemoModel());
+    expect(plan.headcount).toBeNull();
+    expect(plan.notes).toContain("assumes about 20");
+  });
+
+  it("only knows the tasks it was written for", async () => {
+    await expect(new DemoModel().generateText({ system: "", prompt: "Write a poem" })).rejects.toThrow(ModelError);
   });
 });

@@ -1,7 +1,9 @@
 // Runs the catering planner against realistic requests and checks each answer.
-// Usage: node evals/planner.eval.ts           (calls the real model; needs ANTHROPIC_API_KEY)
-//        node evals/planner.eval.ts --fake    (a naive fake model, to try the harness for free)
+// Usage: node evals/planner.eval.ts            (the rule-based DemoModel: free, not AI)
+//        node evals/planner.eval.ts --fake     (a naive fake that ignores the request)
+//        node evals/planner.eval.ts --claude   (optional: a real model; needs ANTHROPIC_API_KEY, costs money)
 import { appendFileSync, readFileSync } from "node:fs";
+import { DemoModel } from "../src/demo-model.ts";
 import { ClaudeModel, type ModelClient } from "../src/model.ts";
 import { PLANNER_PROMPT_VERSION, planCatering, type MenuItem, type Plan, type Suggestion } from "../src/planner.ts";
 
@@ -66,6 +68,7 @@ const cases: Case[] = [
 
 // A deliberately naive fake: always suggests the same order, whatever the request.
 const naiveFake: ModelClient = {
+  name: "naive fake",
   async generateJson() {
     const answer: Suggestion = {
       headcount: null,
@@ -82,12 +85,12 @@ const naiveFake: ModelClient = {
   },
 };
 
-const fake = process.argv.includes("--fake");
-if (!fake && !process.env.ANTHROPIC_API_KEY) {
-  console.log("Set ANTHROPIC_API_KEY to run against the real model, or pass --fake to try the harness.");
+const useClaude = process.argv.includes("--claude");
+if (useClaude && !process.env.ANTHROPIC_API_KEY) {
+  console.log("--claude needs ANTHROPIC_API_KEY. Without one, run the demo model (no flag) or --fake.");
   process.exit(1);
 }
-const model = fake ? naiveFake : new ClaudeModel();
+const model = useClaude ? new ClaudeModel() : process.argv.includes("--fake") ? naiveFake : new DemoModel();
 
 let passedChecks = 0;
 let totalChecks = 0;
@@ -107,10 +110,10 @@ for (const c of cases) {
 }
 
 const score = Math.round((passedChecks / totalChecks) * 100);
-console.log(`\n${passedChecks}/${totalChecks} checks passed (${score}%), prompt v${PLANNER_PROMPT_VERSION}, ${fake ? "naive fake" : "claude"}`);
+console.log(`\n${passedChecks}/${totalChecks} checks passed (${score}%), prompt v${PLANNER_PROMPT_VERSION}, ${model.name}`);
 
 // Keep a history, so you can see whether a change helped.
 appendFileSync(
   "evals/results.jsonl",
-  JSON.stringify({ date: new Date().toISOString(), promptVersion: PLANNER_PROMPT_VERSION, model: fake ? "naive-fake" : "claude", passedChecks, totalChecks }) + "\n",
+  JSON.stringify({ date: new Date().toISOString(), promptVersion: PLANNER_PROMPT_VERSION, model: model.name, passedChecks, totalChecks }) + "\n",
 );

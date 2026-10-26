@@ -87,7 +87,7 @@ export function createApp({ email, model }: Dependencies) {
     if (!model) return c.json({ error: UNAVAILABLE }, 503);
     const menu = await db.query<MenuItem>("SELECT id, name, category, price_cents FROM menu_items ORDER BY id");
     try {
-      return c.json({ plan: await planCatering(parsed.data.description, menu.rows, model) });
+      return c.json({ plan: await planCatering(parsed.data.description, menu.rows, model), suggestedBy: model.name });
     } catch (err) {
       // The model is a dependency that can fail or answer badly. Degrade, don't break (S1).
       if (err instanceof ModelError || err instanceof PlanError) {
@@ -103,7 +103,7 @@ export function createApp({ email, model }: Dependencies) {
     if (!parsed.success) return c.json({ error: "Ask a question between 3 and 500 characters" }, 400);
     if (!model) return c.json({ error: UNAVAILABLE }, 503);
     try {
-      return c.json(await answerQuestion(parsed.data.question, model));
+      return c.json({ ...(await answerQuestion(parsed.data.question, model)), answeredBy: model.name });
     } catch (err) {
       if (err instanceof ModelError) {
         console.error("FAQ answer failed:", err.message);

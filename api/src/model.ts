@@ -5,6 +5,8 @@ import type { z } from "zod";
 // What River Bend needs from a language model, and nothing more. The rest of the app depends on
 // this interface, so the provider can change and tests can pass a fake (S2, lesson 4).
 export interface ModelClient {
+  // Shown to users with every answer, so they always know what produced it.
+  name: string;
   generateJson<T>(request: { system: string; prompt: string; schema: z.ZodType<T> }): Promise<T>;
   generateText(request: { system: string; prompt: string }): Promise<string>;
 }
@@ -15,6 +17,7 @@ export class ModelError extends Error {}
 type Effort = "low" | "medium" | "high";
 
 // The adapter for Claude, through Anthropic's SDK. Reads ANTHROPIC_API_KEY from the environment.
+// Optional: only used when ANTHROPIC_API_KEY is set. Without a key, River Bend uses DemoModel.
 export class ClaudeModel implements ModelClient {
   client: Anthropic;
   model: string;
@@ -24,6 +27,10 @@ export class ClaudeModel implements ModelClient {
     this.client = options.client ?? new Anthropic({ timeout: 60_000, maxRetries: 2 });
     this.model = options.model ?? "claude-opus-5-5";
     this.effort = options.effort ?? "medium";
+  }
+
+  get name() {
+    return `${this.model} (AI)`;
   }
 
   async generateJson<T>({ system, prompt, schema }: { system: string; prompt: string; schema: z.ZodType<T> }) {

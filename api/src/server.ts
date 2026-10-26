@@ -1,11 +1,12 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { logEmailSender } from "./email.ts";
+import { DemoModel } from "./demo-model.ts";
 import { ClaudeModel } from "./model.ts";
 
-// The AI features switch on only when there's a key to use.
-const model = process.env.ANTHROPIC_API_KEY ? new ClaudeModel() : null;
-if (!model) console.log("ANTHROPIC_API_KEY isn't set: the catering helper is switched off.");
+// No key needed: without one, the catering helper runs on simple rules (DemoModel), and says so.
+const model = process.env.ANTHROPIC_API_KEY ? new ClaudeModel() : new DemoModel();
+console.log(`Catering helper: ${model.name}`);
 
 const app = createApp({ email: logEmailSender, model });
 

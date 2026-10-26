@@ -11,9 +11,12 @@ from River Bend's FAQ, plus an eval suite in `api/evals/`. Earlier states are ta
 [`end-of-s2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-s2); this one is
 [`end-of-a2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-a2).
 
-The AI features need a Claude API key in the `ANTHROPIC_API_KEY` environment variable. Without one,
-they report themselves unavailable and everything else works. API use is billed per request, so set a
-spending limit in the Claude Console. Never commit a key.
+**No API key needed.** By default, the planner and FAQ helper run on `DemoModel`: a rule-based
+stand-in that reads the same prompts a model would and answers with simple, fixed rules. It is not
+AI, and every answer says so (`"suggestedBy": "demo rules (not AI)"`). Real-model support
+(`ClaudeModel`, used only if `ANTHROPIC_API_KEY` is set) is included as an optional example; it is
+typechecked against the SDK but has not been run against a live model by the course authors. API use
+is billed per request. Never commit a key.
 
 The lessons build it up step by step, so your code will look different along the way. Use this repository to compare, to get unstuck, or to see
 how the pieces fit together. Don't just copy it: the projects ask you to build your own system,
@@ -77,9 +80,10 @@ area with the account you created above.
 ```bash
 cd api
 npm run typecheck
-npm test                 # unit and integration tests, against an in-memory database (fake model)
-npm run eval -- --fake   # the planner eval harness, with a naive fake model (free)
-npm run eval             # the planner eval, against Claude (needs ANTHROPIC_API_KEY; costs money)
+npm test                 # unit and integration tests, in-memory database, fake and demo models
+npm run eval             # the planner eval, against DemoModel (free, not AI)
+npm run eval -- --fake   # against a naive fake that ignores the request
+npm run eval -- --claude # optional: against Claude (needs ANTHROPIC_API_KEY; costs money)
 
 cd ../web
 npm run lint
