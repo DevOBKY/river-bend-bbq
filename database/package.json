@@ -1,0 +1,14 @@
+{
+  "name": "river-bend-database",
+  "scripts": {
+    "sql": "node sql.ts"
+  },
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.11"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5"
+  }
+}
