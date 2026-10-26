@@ -3,12 +3,17 @@
 The reference code for the running example in [DevOBKY](https://devobky.org)'s Building track:
 the catering-order system for River Bend BBQ, a (fictional) barbecue restaurant in Owensboro, KY.
 
-This branch is the system as it stands at the **end of S2** *Software Design*: the API's order
-routes are split into rules (`orders.ts`) and storage (`order-store.ts`), order statuses follow a
-state machine, and "your order is ready" emails go through an `EmailSender` interface. The `main`
-branch, and the [`end-of-b4`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-b4) tag, show
-it as it was at the end of B4. This state is tagged
-[`end-of-s2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-s2).
+This branch is the system as it stands at the **end of A2** *Building with LLMs*: on top of the S2
+redesign, the API has a catering planner (`POST /catering/suggest`) that turns a description of an
+event into an order from the real menu, and an FAQ helper (`POST /catering/ask`) that answers only
+from River Bend's FAQ, plus an eval suite in `api/evals/`. Earlier states are tagged
+[`end-of-b4`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-b4) and
+[`end-of-s2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-s2); this one is
+[`end-of-a2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-a2).
+
+The AI features need a Claude API key in the `ANTHROPIC_API_KEY` environment variable. Without one,
+they report themselves unavailable and everything else works. API use is billed per request, so set a
+spending limit in the Claude Console. Never commit a key.
 
 The lessons build it up step by step, so your code will look different along the way. Use this repository to compare, to get unstuck, or to see
 how the pieces fit together. Don't just copy it: the projects ask you to build your own system,
@@ -72,7 +77,9 @@ area with the account you created above.
 ```bash
 cd api
 npm run typecheck
-npm test                 # unit and integration tests, against an in-memory database
+npm test                 # unit and integration tests, against an in-memory database (fake model)
+npm run eval -- --fake   # the planner eval harness, with a naive fake model (free)
+npm run eval             # the planner eval, against Claude (needs ANTHROPIC_API_KEY; costs money)
 
 cd ../web
 npm run lint

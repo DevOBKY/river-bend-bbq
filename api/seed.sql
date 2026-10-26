@@ -31,3 +31,13 @@ INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents) VAL
   (4, 1, 2, 1499), (4, 4, 1, 999),
   (5, 3, 3, 1899), (5, 7, 1, 2499),
   (6, 1, 12, 1499), (6, 2, 8, 1699), (6, 4, 6, 999), (6, 7, 2, 2499);
+
+INSERT INTO faq (question, answer) VALUES
+  ('How much notice do you need for catering?', 'Catering orders need at least 24 hours'' notice, so we have time to smoke the meat. For 100 or more people, please give us a week.'),
+  ('Do you deliver?', 'Yes, within 20 miles of Owensboro, for orders over $300. Delivery is $35. Otherwise, pick up at the restaurant on Frederica Street.'),
+  ('Can I cancel or change my order?', 'You can change or cancel an order up to 48 hours before pickup. After that, call us and we''ll do what we can.'),
+  ('Do you take deposits?', 'Orders over $500 need a 25% deposit when you order, paid by card. The rest is due at pickup.'),
+  ('Do you have options for vegetarians?', 'Our sides are vegetarian except the baked beans and the burgoo, which both contain meat.'),
+  ('Do you provide plates and utensils?', 'Yes. Plates, napkins, utensils, and serving spoons are free with any catering order. Just ask when you order.'),
+  ('How do you keep the food hot?', 'Meat and hot sides come in insulated pans that keep them hot for about two hours.'),
+  ('What is burgoo?', 'Burgoo is a thick, slow-cooked western Kentucky stew of meats and vegetables. Ours is made with mutton, chicken, and pork.');

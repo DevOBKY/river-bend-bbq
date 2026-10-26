@@ -11,7 +11,7 @@ const fakeEmail: EmailSender = {
     sent.push(email);
   },
 };
-const app = createApp({ email: fakeEmail });
+const app = createApp({ email: fakeEmail, model: null });
 
 // Sends a request straight to the app, with no network or port involved.
 async function call(method: string, path: string, body?: unknown, cookie?: string) {
@@ -120,7 +120,7 @@ describe("staff", () => {
         throw new Error("email provider unavailable");
       },
     };
-    const appWithBrokenEmail = createApp({ email: brokenEmail });
+    const appWithBrokenEmail = createApp({ email: brokenEmail, model: null });
     const login = await appWithBrokenEmail.request("/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

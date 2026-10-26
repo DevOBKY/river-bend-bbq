@@ -4,17 +4,24 @@ import { z } from "zod";
 import { checkPassword, endSession, requireStaff, startSession, type Env } from "./auth.ts";
 import { db } from "./db.ts";
 import type { EmailSender } from "./email.ts";
+import { answerQuestion } from "./faq.ts";
+import { ModelError, type ModelClient } from "./model.ts";
 import { changeOrderStatus, findOrder, listOrders, placeOrder, UnknownMenuItemError } from "./order-store.ts";
 import { newOrder, nextStatuses, orderStatuses, pickupProblem } from "./orders.ts";
+import { PlanError, planCatering } from "./planner.ts";
 
 // What the app needs from the outside world, passed in rather than imported, so tests can pass fakes.
-export type Dependencies = { email: EmailSender };
+// model is null when no model is configured: the AI features switch off and everything else works.
+export type Dependencies = { email: EmailSender; model: ModelClient | null };
 
 type MenuItem = { id: number; name: string; category: string; price_cents: number };
 const statusChange = z.object({ status: z.enum(orderStatuses) });
 const login = z.object({ email: z.email(), password: z.string().min(1) });
+const cateringRequest = z.object({ description: z.string().trim().min(10, "Tell us a little about your event").max(2000) });
+const question = z.object({ question: z.string().trim().min(3).max(500) });
+const UNAVAILABLE = "Suggestions aren't available right now. You can still order from the menu.";
 
-export function createApp({ email }: Dependencies) {
+export function createApp({ email, model }: Dependencies) {
   const app = new Hono<Env>();
 
   // Log one line per request: method, path, status, and how long it took.
@@ -68,6 +75,40 @@ export function createApp({ email }: Dependencies) {
       return c.json({ order: await findOrder(id) }, 201);
     } catch (err) {
       if (err instanceof UnknownMenuItemError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+  });
+
+  // ---- Catering helper (AI) ----
+
+  app.post("/catering/suggest", async (c) => {
+    const parsed = cateringRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: parsed.error.issues[0].message }, 400);
+    if (!model) return c.json({ error: UNAVAILABLE }, 503);
+    const menu = await db.query<MenuItem>("SELECT id, name, category, price_cents FROM menu_items ORDER BY id");
+    try {
+      return c.json({ plan: await planCatering(parsed.data.description, menu.rows, model) });
+    } catch (err) {
+      // The model is a dependency that can fail or answer badly. Degrade, don't break (S1).
+      if (err instanceof ModelError || err instanceof PlanError) {
+        console.error("Catering suggestion failed:", err.message);
+        return c.json({ error: UNAVAILABLE }, 503);
+      }
+      throw err;
+    }
+  });
+
+  app.post("/catering/ask", async (c) => {
+    const parsed = question.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Ask a question between 3 and 500 characters" }, 400);
+    if (!model) return c.json({ error: UNAVAILABLE }, 503);
+    try {
+      return c.json(await answerQuestion(parsed.data.question, model));
+    } catch (err) {
+      if (err instanceof ModelError) {
+        console.error("FAQ answer failed:", err.message);
+        return c.json({ error: UNAVAILABLE }, 503);
+      }
       throw err;
     }
   });

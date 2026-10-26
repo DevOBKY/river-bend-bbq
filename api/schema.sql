@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS sessions, staff, order_items, orders, menu_items, customers;
+DROP TABLE IF EXISTS faq, sessions, staff, order_items, orders, menu_items, customers;
 
 CREATE TABLE customers (
   id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -41,4 +41,10 @@ CREATE TABLE sessions (
   token_hash text PRIMARY KEY,
   staff_id   integer NOT NULL REFERENCES staff (id) ON DELETE CASCADE,
   expires_at timestamptz NOT NULL
+);
+
+CREATE TABLE faq (
+  id       integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  question text NOT NULL,
+  answer   text NOT NULL
 );

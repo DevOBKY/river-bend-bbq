@@ -4,3 +4,6 @@ db
 # Playwright
 test-results
 playwright-report
+
+# Local eval history
+api/evals/results.jsonl
