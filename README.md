@@ -1,6 +1,6 @@
 # River Bend BBQ
 
-The reference code for the running example in [DevOBKY](https://devobky.org)'s Building track:
+The reference code for the running example in [devOBKY](https://devobky.org)'s Building track:
 the catering-order system for River Bend BBQ, a (fictional) barbecue restaurant in Owensboro, KY.
 
 It's the system as it stands at the **end of B4**. The lessons build it up step by step, so your
