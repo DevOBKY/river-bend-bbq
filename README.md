@@ -6,10 +6,9 @@ the catering-order system for River Bend BBQ, a (fictional) barbecue restaurant 
 This branch is the system as it stands at the **end of A2** *Building with LLMs*: on top of the S2
 redesign, the API has a catering planner (`POST /catering/suggest`) that turns a description of an
 event into an order from the real menu, and an FAQ helper (`POST /catering/ask`) that answers only
-from River Bend's FAQ, plus an eval suite in `api/evals/`. Earlier states are tagged
-[`end-of-b4`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-b4) and
-[`end-of-s2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-s2); this one is
-[`end-of-a2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-a2).
+from River Bend's FAQ, plus an eval suite in `api/evals/`. Earlier states are on the
+[`main`](https://github.com/DevOBKY/river-bend-bbq/tree/main) branch (end of B4) and the
+[`s2-software-design`](https://github.com/DevOBKY/river-bend-bbq/tree/s2-software-design) branch.
 
 **No API key needed.** By default, the planner and FAQ helper run on `DemoModel`: a rule-based
 stand-in that reads the same prompts a model would and answers with simple, fixed rules. It is not
