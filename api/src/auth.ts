@@ -9,7 +9,7 @@ const COOKIE = "session";
 const SESSION_DAYS = 7;
 
 export type Staff = { id: number; email: string; name: string };
-export type Env = { Variables: { staff: Staff } };
+export type Env = { Variables: { staff: Staff; requestId: string } };
 
 // Passwords are stored as "salt$hash", never as the password itself.
 export async function hashPassword(password: string): Promise<string> {

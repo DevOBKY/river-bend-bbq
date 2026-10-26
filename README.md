@@ -3,12 +3,13 @@
 The reference code for the running example in [devOBKY](https://devobky.org)'s Building track:
 the catering-order system for River Bend BBQ, a (fictional) barbecue restaurant in Owensboro, KY.
 
-This branch is the system as it stands at the **end of S2** *Software Design*: the API's order
-routes are split into rules (`orders.ts`) and storage (`order-store.ts`), order statuses follow a
-state machine, and "your order is ready" emails go through an `EmailSender` interface. The
-[`main`](https://github.com/DevOBKY/river-bend-bbq/tree/main) branch shows it as it was at the end
-of B4, and [`a2-building-with-llms`](https://github.com/DevOBKY/river-bend-bbq/tree/a2-building-with-llms)
-builds on this branch.
+This branch is the system as it stands at the **end of S3** *Architecture in Practice*, building on
+the [`s2-software-design`](https://github.com/DevOBKY/river-bend-bbq/tree/s2-software-design) branch:
+a menu cache, a job queue in Postgres (the "order ready" email is queued in the same transaction as the
+status change, and a worker sends it with retries), idempotent checkout (`Idempotency-Key`), request
+ids and a `/metrics` endpoint, and one deployable service that serves the API under `/api` and the
+built site for everything else, with a `Dockerfile`. The
+[`main`](https://github.com/DevOBKY/river-bend-bbq/tree/main) branch shows the end of B4.
 
 The lessons build it up step by step, so your code will look different along the way. Use this repository to compare, to get unstuck, or to see
 how the pieces fit together. Don't just copy it: the projects ask you to build your own system,
@@ -66,6 +67,20 @@ npm run dev
 
 Open <http://localhost:5173>. Vite forwards `/api/*` to the API on port 3000. Sign in to the staff
 area with the account you created above.
+
+### Production mode (S3)
+
+One service serves both halves: the API under `/api`, and the built site for everything else.
+
+```bash
+cd web && npm install && npm run build && cd ..
+cd api && npm install --omit=dev
+NODE_ENV=production WEB_DIST=../web/dist PORT=8080 node src/server.ts
+```
+
+Open <http://localhost:8080>. Or build the container image with `docker build -t river-bend .` and run
+it with a volume for the database: `docker run -p 8080:8080 -v river-bend-data:/data river-bend`.
+(The course authors ran the image's steps by hand but didn't build the image itself.)
 
 ## Tests (B4)
 

@@ -3,6 +3,8 @@ import { createApp } from "./app.ts";
 import { hashPassword } from "./auth.ts";
 import { db, resetDatabase } from "./db.ts";
 import type { Email, EmailSender } from "./email.ts";
+import { jobHandlers } from "./job-handlers.ts";
+import { runNextJob } from "./jobs.ts";
 
 // A fake email service: it remembers what it was asked to send, and sends nothing.
 const sent: Email[] = [];
@@ -11,7 +13,7 @@ const fakeEmail: EmailSender = {
     sent.push(email);
   },
 };
-const app = createApp({ email: fakeEmail });
+const app = createApp();
 
 // Sends a request straight to the app, with no network or port involved.
 async function call(method: string, path: string, body?: unknown, cookie?: string) {
@@ -106,33 +108,30 @@ describe("staff", () => {
     expect(res.body.order.status).toBe("ready");
   });
 
-  it("emails the customer when an order is ready", async () => {
+  it("queues an email to the customer when an order is ready, and the worker sends it", async () => {
     const cookie = await signIn();
     await call("PATCH", "/orders/6", { status: "ready" }, cookie);
+    expect(sent).toHaveLength(0); // nothing is sent during the request
+    expect(await runNextJob(jobHandlers({ email: fakeEmail }))).toBe(true);
     expect(sent).toEqual([
       { to: "events@example.org", subject: "Your River Bend order is ready", text: "Order #6 is ready for pickup." },
     ]);
+    expect(await runNextJob(jobHandlers({ email: fakeEmail }))).toBe(false); // the queue is empty
   });
 
-  it("still marks the order ready if the email service is down", async () => {
+  it("keeps the email for a later retry if the email service is down", async () => {
     const brokenEmail: EmailSender = {
       async send() {
         throw new Error("email provider unavailable");
       },
     };
-    const appWithBrokenEmail = createApp({ email: brokenEmail });
-    const login = await appWithBrokenEmail.request("/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "pat@riverbend.example", password: "smoked-brisket-42" }),
-    });
-    const cookie = login.headers.get("set-cookie")!.split(";")[0];
-    const res = await appWithBrokenEmail.request("/orders/6", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ status: "ready" }),
-    });
-    expect(res.status).toBe(200);
+    const cookie = await signIn();
+    expect((await call("PATCH", "/orders/6", { status: "ready" }, cookie)).status).toBe(200);
+    await runNextJob(jobHandlers({ email: brokenEmail }));
+    const job = (await db.query<{ attempts: number; last_error: string; waits: boolean }>(
+      "SELECT attempts, last_error, run_after > now() AS waits FROM jobs",
+    )).rows;
+    expect(job).toEqual([{ attempts: 1, last_error: "email provider unavailable", waits: true }]);
   });
 
   it("refuses to change an order that's already picked up", async () => {
@@ -140,7 +139,7 @@ describe("staff", () => {
     const res = await call("PATCH", "/orders/1", { status: "ready" }, cookie);
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("Order 1 is picked_up; that's final");
-    expect(sent).toHaveLength(0);
+    expect((await db.query("SELECT 1 FROM jobs")).rows).toHaveLength(0);
   });
 
   it("loses access after signing out", async () => {

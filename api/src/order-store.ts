@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { db } from "./db.ts";
 import { statusesThatCanMoveTo, type OrderStatus } from "./orders.ts";
 
@@ -28,9 +29,34 @@ export class UnknownMenuItemError extends Error {
   }
 }
 
-// Saves the customer, the order, and its lines in one transaction. Returns the new order's id.
-export async function placeOrder({ customer, pickupAt, items }: NewOrder): Promise<number> {
+// The same idempotency key was sent with a different order: almost certainly a client bug.
+export class IdempotencyKeyReusedError extends Error {}
+
+// Saves the customer, the order, and its lines in one transaction. Returns the order's id.
+// With an idempotency key, a retry of the same request returns the original order instead of
+// placing a second one (S3, lesson 5).
+export async function placeOrder(
+  { customer, pickupAt, items }: NewOrder,
+  idempotencyKey?: string,
+): Promise<{ id: number; replayed: boolean }> {
   return db.transaction(async (tx) => {
+    if (idempotencyKey) {
+      const requestHash = createHash("sha256").update(JSON.stringify({ customer, pickupAt, items })).digest("hex");
+      // The key is the primary key, so only one request can ever claim it.
+      const claimed = await tx.query(
+        "INSERT INTO idempotency_keys (key, request_hash) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING key",
+        [idempotencyKey, requestHash],
+      );
+      if (claimed.rows.length === 0) {
+        const earlier = await tx.query<{ request_hash: string; order_id: number }>(
+          "SELECT request_hash, order_id FROM idempotency_keys WHERE key = $1",
+          [idempotencyKey],
+        );
+        if (earlier.rows[0].request_hash !== requestHash) throw new IdempotencyKeyReusedError("That idempotency key was used for a different order");
+        return { id: earlier.rows[0].order_id, replayed: true };
+      }
+    }
+
     const saved = await tx.query<{ id: number }>(
       `INSERT INTO customers (name, email, phone) VALUES ($1, $2, $3)
        ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
@@ -51,7 +77,8 @@ export async function placeOrder({ customer, pickupAt, items }: NewOrder): Promi
       );
       if (added.affectedRows === 0) throw new UnknownMenuItemError(item.menuItemId);
     }
-    return id;
+    if (idempotencyKey) await tx.query("UPDATE idempotency_keys SET order_id = $1 WHERE key = $2", [id, idempotencyKey]);
+    return { id, replayed: false };
   });
 }
 
@@ -89,15 +116,24 @@ export type StatusChange =
   | { result: "not_allowed"; current: OrderStatus };
 
 // Changes an order's status, only if the rules allow it from the status it has right now.
+// Moving to "ready" also queues the customer's email, in the same transaction: both happen, or neither.
 export async function changeOrderStatus(id: number, to: OrderStatus): Promise<StatusChange> {
-  const changed = await db.query<{ email: string }>(
-    `UPDATE orders o SET status = $1
-     FROM customers c
-     WHERE o.id = $2 AND c.id = o.customer_id AND o.status = ANY($3)
-     RETURNING c.email`,
-    [to, id, statusesThatCanMoveTo(to)],
-  );
-  if (changed.rows[0]) return { result: "changed", customerEmail: changed.rows[0].email };
+  const changed = await db.transaction(async (tx) => {
+    const updated = await tx.query<{ email: string }>(
+      `UPDATE orders o SET status = $1
+       FROM customers c
+       WHERE o.id = $2 AND c.id = o.customer_id AND o.status = ANY($3)
+       RETURNING c.email`,
+      [to, id, statusesThatCanMoveTo(to)],
+    );
+    const email = updated.rows[0]?.email;
+    if (email && to === "ready") {
+      const payload = JSON.stringify({ orderId: id, to: email });
+      await tx.query("INSERT INTO jobs (kind, payload) VALUES ('email.order_ready', $1)", [payload]);
+    }
+    return email;
+  });
+  if (changed) return { result: "changed", customerEmail: changed };
   const existing = await db.query<{ status: OrderStatus }>("SELECT status FROM orders WHERE id = $1", [id]);
   return existing.rows[0] ? { result: "not_allowed", current: existing.rows[0].status } : { result: "not_found" };
 }

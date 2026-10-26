@@ -9,6 +9,9 @@ export function CheckoutPage({ cart, onRemove, onOrdered }: Props) {
   const [error, setError] = useState<ApiError | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [placed, setPlaced] = useState<Order | null>(null);
+  // One key per checkout: if the request is retried (a double click, a dropped connection), the API
+  // recognises it and returns the same order instead of placing a second one.
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const totalCents = cart.reduce((sum, line) => sum + line.item.price_cents * line.quantity, 0);
 
@@ -23,6 +26,7 @@ export function CheckoutPage({ cart, onRemove, onOrdered }: Props) {
     try {
       const result = await api<{ order: Order }>('/orders', {
         method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: {
           customer: { name: form.name, email: form.email, phone: form.phone || undefined },
           // The input gives local time, like "2026-11-07T12:00"; the API wants a full timestamp.

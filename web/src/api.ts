@@ -20,10 +20,13 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, options?: { method?: string; body?: unknown }): Promise<T> {
+export async function api<T>(
+  path: string,
+  options?: { method?: string; body?: unknown; headers?: Record<string, string> },
+): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method: options?.method ?? 'GET',
-    headers: options?.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: { ...(options?.body ? { 'Content-Type': 'application/json' } : {}), ...options?.headers },
     body: options?.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await response.json().catch(() => ({}));

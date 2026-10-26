@@ -1,43 +1,64 @@
+import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { checkPassword, endSession, requireStaff, startSession, type Env } from "./auth.ts";
+import { TtlCache } from "./cache.ts";
 import { db } from "./db.ts";
-import type { EmailSender } from "./email.ts";
-import { changeOrderStatus, findOrder, listOrders, placeOrder, UnknownMenuItemError } from "./order-store.ts";
+import { Metrics } from "./metrics.ts";
+import {
+  changeOrderStatus,
+  findOrder,
+  IdempotencyKeyReusedError,
+  listOrders,
+  placeOrder,
+  UnknownMenuItemError,
+} from "./order-store.ts";
 import { newOrder, nextStatuses, orderStatuses, pickupProblem } from "./orders.ts";
 
-// What the app needs from the outside world, passed in rather than imported, so tests can pass fakes.
-export type Dependencies = { email: EmailSender };
+// Settings the app needs from outside, with defaults, so tests can control time and the cache.
+export type Options = { menuCacheMs?: number; now?: () => number };
 
 type MenuItem = { id: number; name: string; category: string; price_cents: number };
 const statusChange = z.object({ status: z.enum(orderStatuses) });
+const priceChange = z.object({ price_cents: z.number().int().positive() });
 const login = z.object({ email: z.email(), password: z.string().min(1) });
+const idempotencyKey = z.string().min(8).max(100).optional();
 
-export function createApp({ email }: Dependencies) {
+export function createApp({ menuCacheMs = 60_000, now = Date.now }: Options = {}) {
   const app = new Hono<Env>();
+  const metrics = new Metrics();
+  const menuCache = new TtlCache<MenuItem[]>(menuCacheMs, now);
 
-  // Log one line per request: method, path, status, and how long it took.
+  // Every request gets an id, sent back in a header and written on every log line, so one request
+  // can be followed through all the logs it touches. A caller's own id is kept if it sends one.
   app.use(async (c, next) => {
+    const incoming = c.req.header("X-Request-Id");
+    const requestId = incoming && /^[\w-]{8,64}$/.test(incoming) ? incoming : randomUUID();
+    c.set("requestId", requestId);
     const started = performance.now();
     await next();
     const ms = Math.round(performance.now() - started);
-    console.log(JSON.stringify({ method: c.req.method, path: c.req.path, status: c.res.status, ms }));
+    c.header("X-Request-Id", requestId);
+    metrics.record(c.req.method, c.req.routePath, c.res.status, ms);
+    console.log(JSON.stringify({ requestId, method: c.req.method, path: c.req.path, status: c.res.status, ms }));
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
 
+  // For monitoring tools to collect. Staff only: request counts are business information.
+  app.get("/metrics", requireStaff, (c) => c.text(metrics.text()));
+
   // ---- Menu (public) ----
 
   app.get("/menu", async (c) => {
+    // The menu changes rarely and is read constantly: a good thing to cache (lesson 2).
+    const menu = await menuCache.get("all", async () => {
+      const result = await db.query<MenuItem>("SELECT id, name, category, price_cents FROM menu_items ORDER BY id");
+      return result.rows;
+    });
     const category = c.req.query("category");
-    const result = category
-      ? await db.query<MenuItem>(
-          "SELECT id, name, category, price_cents FROM menu_items WHERE category = $1 ORDER BY id",
-          [category],
-        )
-      : await db.query<MenuItem>("SELECT id, name, category, price_cents FROM menu_items ORDER BY id");
-    return c.json({ items: result.rows });
+    return c.json({ items: category ? menu.filter((m) => m.category === category) : menu });
   });
 
   app.get("/menu/:id", async (c) => {
@@ -52,22 +73,41 @@ export function createApp({ email }: Dependencies) {
     return c.json({ item });
   });
 
+  app.patch("/menu/:id", requireStaff, async (c) => {
+    const parsed = priceChange.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "price_cents must be a positive whole number" }, 400);
+    const id = Number(c.req.param("id"));
+    const result = Number.isInteger(id)
+      ? await db.query<MenuItem>(
+          "UPDATE menu_items SET price_cents = $1 WHERE id = $2 RETURNING id, name, category, price_cents",
+          [parsed.data.price_cents, id],
+        )
+      : null;
+    if (!result?.rows[0]) return c.json({ error: "Menu item not found" }, 404);
+    menuCache.clear(); // the source of truth changed, so drop the copy
+    return c.json({ item: result.rows[0] });
+  });
+
   // ---- Orders ----
 
   app.post("/orders", async (c) => {
+    const key = idempotencyKey.safeParse(c.req.header("Idempotency-Key"));
+    if (!key.success) return c.json({ error: "Idempotency-Key must be 8 to 100 characters" }, 400);
     const parsed = newOrder.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       const issues = parsed.error.issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message));
       return c.json({ error: "Invalid order", issues }, 400);
     }
-    const problem = pickupProblem(new Date(parsed.data.pickupAt), new Date());
+    const problem = pickupProblem(new Date(parsed.data.pickupAt), new Date(now()));
     if (problem) return c.json({ error: problem }, 400);
 
     try {
-      const id = await placeOrder(parsed.data);
+      const { id, replayed } = await placeOrder(parsed.data, key.data);
+      if (replayed) c.header("Idempotent-Replayed", "true");
       return c.json({ order: await findOrder(id) }, 201);
     } catch (err) {
       if (err instanceof UnknownMenuItemError) return c.json({ error: err.message }, 400);
+      if (err instanceof IdempotencyKeyReusedError) return c.json({ error: err.message }, 422);
       throw err;
     }
   });
@@ -90,6 +130,7 @@ export function createApp({ email }: Dependencies) {
     if (!parsed.success) return c.json({ error: `status must be one of ${orderStatuses.join(", ")}` }, 400);
     const id = Number(c.req.param("id"));
     const to = parsed.data.status;
+    // Moving to "ready" also queues the customer's email (lesson 2). Nothing is sent from here.
     const change = Number.isInteger(id) ? await changeOrderStatus(id, to) : { result: "not_found" as const };
 
     if (change.result === "not_found") return c.json({ error: "Order not found" }, 404);
@@ -97,13 +138,6 @@ export function createApp({ email }: Dependencies) {
       const allowed = nextStatuses[change.current];
       const options = allowed.length ? `it can only become ${allowed.join(" or ")}` : "that's final";
       return c.json({ error: `Order ${id} is ${change.current}; ${options}` }, 409);
-    }
-
-    if (to === "ready") {
-      // The status change has already succeeded. A failed email shouldn't undo it or fail the request.
-      await email
-        .send({ to: change.customerEmail, subject: "Your River Bend order is ready", text: `Order #${id} is ready for pickup.` })
-        .catch((err) => console.error("Couldn't send the ready email", err));
     }
     return c.json({ order: await findOrder(id) });
   });
@@ -139,8 +173,9 @@ export function createApp({ email }: Dependencies) {
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
-    console.error(err);
-    return c.json({ error: "Something went wrong" }, 500);
+    // The request id ties this error to the request's log line, and the client can quote it.
+    console.error(JSON.stringify({ requestId: c.get("requestId"), error: err.message, stack: err.stack }));
+    return c.json({ error: "Something went wrong", requestId: c.get("requestId") }, 500);
   });
 
   return app;

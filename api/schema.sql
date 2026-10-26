@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS sessions, staff, order_items, orders, menu_items, customers;
+DROP TABLE IF EXISTS jobs, idempotency_keys, sessions, staff, order_items, orders, menu_items, customers;
 
 CREATE TABLE customers (
   id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -41,4 +41,24 @@ CREATE TABLE sessions (
   token_hash text PRIMARY KEY,
   staff_id   integer NOT NULL REFERENCES staff (id) ON DELETE CASCADE,
   expires_at timestamptz NOT NULL
+);
+
+-- Work to do in the background, like sending emails (S3, lesson 2).
+CREATE TABLE jobs (
+  id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kind       text NOT NULL,
+  payload    jsonb NOT NULL,
+  run_after  timestamptz NOT NULL DEFAULT now(),
+  attempts   integer NOT NULL DEFAULT 0,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX jobs_due ON jobs (run_after);
+
+-- Remembers each checkout attempt, so a retried request can't place the order twice (S3, lesson 5).
+CREATE TABLE idempotency_keys (
+  key          text PRIMARY KEY,
+  request_hash text NOT NULL,
+  order_id     integer REFERENCES orders (id),
+  created_at   timestamptz NOT NULL DEFAULT now()
 );
