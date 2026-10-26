@@ -3,8 +3,14 @@
 The reference code for the running example in [DevOBKY](https://devobky.org)'s Building track:
 the catering-order system for River Bend BBQ, a (fictional) barbecue restaurant in Owensboro, KY.
 
-It's the system as it stands at the **end of B4**. The lessons build it up step by step, so your
-code will look different along the way. Use this repository to compare, to get unstuck, or to see
+This branch is the system as it stands at the **end of S2** *Software Design*: the API's order
+routes are split into rules (`orders.ts`) and storage (`order-store.ts`), order statuses follow a
+state machine, and "your order is ready" emails go through an `EmailSender` interface. The `main`
+branch, and the [`end-of-b4`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-b4) tag, show
+it as it was at the end of B4. This state is tagged
+[`end-of-s2`](https://github.com/DevOBKY/river-bend-bbq/tree/end-of-s2).
+
+The lessons build it up step by step, so your code will look different along the way. Use this repository to compare, to get unstuck, or to see
 how the pieces fit together. Don't just copy it: the projects ask you to build your own system,
 and the understanding comes from building.
 

@@ -28,3 +28,19 @@ export function pickupProblem(pickupAt: Date, now: Date): string | null {
   if (hoursAway < NOTICE_HOURS) return `Catering orders need at least ${NOTICE_HOURS} hours' notice`;
   return null;
 }
+
+export const orderStatuses = ["placed", "ready", "picked_up", "cancelled"] as const;
+export type OrderStatus = (typeof orderStatuses)[number];
+
+// Which statuses an order may move to from each status. Picked-up and cancelled orders are final.
+export const nextStatuses: Record<OrderStatus, OrderStatus[]> = {
+  placed: ["ready", "cancelled"],
+  ready: ["picked_up", "placed", "cancelled"],
+  picked_up: [],
+  cancelled: [],
+};
+
+// The statuses an order must currently have to be allowed to move to `to`.
+export function statusesThatCanMoveTo(to: OrderStatus): OrderStatus[] {
+  return orderStatuses.filter((from) => nextStatuses[from].includes(to));
+}

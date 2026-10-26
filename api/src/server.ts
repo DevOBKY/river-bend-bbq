@@ -1,5 +1,8 @@
 import { serve } from "@hono/node-server";
-import { app } from "./app.ts";
+import { createApp } from "./app.ts";
+import { logEmailSender } from "./email.ts";
+
+const app = createApp({ email: logEmailSender });
 
 const port = Number(process.env.PORT ?? 3000);
 serve({ fetch: app.fetch, port }, () => {

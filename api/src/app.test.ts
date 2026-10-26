@@ -1,7 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { app } from "./app.ts";
+import { createApp } from "./app.ts";
 import { hashPassword } from "./auth.ts";
 import { db, resetDatabase } from "./db.ts";
+import type { Email, EmailSender } from "./email.ts";
+
+// A fake email service: it remembers what it was asked to send, and sends nothing.
+const sent: Email[] = [];
+const fakeEmail: EmailSender = {
+  async send(email) {
+    sent.push(email);
+  },
+};
+const app = createApp({ email: fakeEmail });
 
 // Sends a request straight to the app, with no network or port involved.
 async function call(method: string, path: string, body?: unknown, cookie?: string) {
@@ -25,6 +35,7 @@ const countOrders = async () => (await db.query<{ n: number }>("SELECT count(*):
 
 beforeEach(async () => {
   await resetDatabase(); // every test starts from the same sample data
+  sent.length = 0;
 });
 
 describe("menu", () => {
@@ -93,6 +104,43 @@ describe("staff", () => {
     const res = await call("PATCH", "/orders/6", { status: "ready" }, cookie);
     expect(res.status).toBe(200);
     expect(res.body.order.status).toBe("ready");
+  });
+
+  it("emails the customer when an order is ready", async () => {
+    const cookie = await signIn();
+    await call("PATCH", "/orders/6", { status: "ready" }, cookie);
+    expect(sent).toEqual([
+      { to: "events@example.org", subject: "Your River Bend order is ready", text: "Order #6 is ready for pickup." },
+    ]);
+  });
+
+  it("still marks the order ready if the email service is down", async () => {
+    const brokenEmail: EmailSender = {
+      async send() {
+        throw new Error("email provider unavailable");
+      },
+    };
+    const appWithBrokenEmail = createApp({ email: brokenEmail });
+    const login = await appWithBrokenEmail.request("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "pat@riverbend.example", password: "smoked-brisket-42" }),
+    });
+    const cookie = login.headers.get("set-cookie")!.split(";")[0];
+    const res = await appWithBrokenEmail.request("/orders/6", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ status: "ready" }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses to change an order that's already picked up", async () => {
+    const cookie = await signIn();
+    const res = await call("PATCH", "/orders/1", { status: "ready" }, cookie);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("Order 1 is picked_up; that's final");
+    expect(sent).toHaveLength(0);
   });
 
   it("loses access after signing out", async () => {
