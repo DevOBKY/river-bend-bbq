@@ -11,3 +11,10 @@ export const logEmailSender: EmailSender = {
     console.log(JSON.stringify({ email: { to: email.to, subject: email.subject } }));
   },
 };
+
+// The email a customer gets when their order is ready. Used by the staff dashboard and the agent.
+export const readyEmail = (orderId: number, to: string): Email => ({
+  to,
+  subject: "Your River Bend order is ready",
+  text: `Order #${orderId} is ready for pickup.`,
+});

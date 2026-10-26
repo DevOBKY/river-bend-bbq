@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { checkPassword, endSession, requireStaff, startSession, type Env } from "./auth.ts";
+import { kitchenCapacity } from "./capacity.ts";
 import { db } from "./db.ts";
-import type { EmailSender } from "./email.ts";
+import { readyEmail, type EmailSender } from "./email.ts";
 import { answerQuestion } from "./faq.ts";
 import { ModelError, type ModelClient } from "./model.ts";
 import { changeOrderStatus, findOrder, listOrders, placeOrder, UnknownMenuItemError } from "./order-store.ts";
@@ -18,6 +19,7 @@ type MenuItem = { id: number; name: string; category: string; price_cents: numbe
 const statusChange = z.object({ status: z.enum(orderStatuses) });
 const login = z.object({ email: z.email(), password: z.string().min(1) });
 const cateringRequest = z.object({ description: z.string().trim().min(10, "Tell us a little about your event").max(2000) });
+const capacityDate = z.iso.date("date must be a day, like 2026-10-24");
 const question = z.object({ question: z.string().trim().min(3).max(500) });
 const UNAVAILABLE = "Suggestions aren't available right now. You can still order from the menu.";
 
@@ -143,10 +145,17 @@ export function createApp({ email, model }: Dependencies) {
     if (to === "ready") {
       // The status change has already succeeded. A failed email shouldn't undo it or fail the request.
       await email
-        .send({ to: change.customerEmail, subject: "Your River Bend order is ready", text: `Order #${id} is ready for pickup.` })
+        .send(readyEmail(id, change.customerEmail))
         .catch((err) => console.error("Couldn't send the ready email", err));
     }
     return c.json({ order: await findOrder(id) });
+  });
+
+  // How much meat is booked for a day, so staff know whether to take another order (spec 001).
+  app.get("/kitchen/capacity", requireStaff, async (c) => {
+    const date = capacityDate.safeParse(c.req.query("date"));
+    if (!date.success) return c.json({ error: date.error.issues[0].message }, 400);
+    return c.json({ capacity: await kitchenCapacity(date.data) });
   });
 
   // ---- Sign in ----

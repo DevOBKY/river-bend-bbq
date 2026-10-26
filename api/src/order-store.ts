@@ -73,6 +73,15 @@ export async function findOrder(id: number): Promise<OrderSummary | null> {
   return { ...order.rows[0], items: lines.rows, total_cents: totalCents };
 }
 
+// Who placed an order, or null if there's no such order.
+export async function orderCustomer(id: number): Promise<{ name: string; email: string } | null> {
+  const result = await db.query<{ name: string; email: string }>(
+    "SELECT c.name, c.email FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = $1",
+    [id],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function listOrders(status: string) {
   const result = await db.query<{ id: number; customer: string; pickup_at: Date; status: string }>(
     `SELECT o.id, c.name AS customer, o.pickup_at, o.status

@@ -143,6 +143,49 @@ describe("staff", () => {
     expect(sent).toHaveLength(0);
   });
 
+  // Spec 001: kitchen capacity. One test per acceptance criterion.
+  describe("kitchen capacity", () => {
+    it("shows booked and available meat for a day, ignoring cancelled orders", async () => {
+      await call("PATCH", "/orders/6", { status: "cancelled" }, await signIn()); // 20 lb on the 24th
+      const cookie = await signIn();
+      expect((await call("GET", "/kitchen/capacity?date=2026-10-24", undefined, cookie)).body.capacity).toEqual({
+        date: "2026-10-24",
+        bookedPounds: 0,
+        limitPounds: 120,
+        availablePounds: 120,
+      });
+      expect((await call("GET", "/kitchen/capacity?date=2026-10-09", undefined, cookie)).body.capacity.bookedPounds).toBe(16);
+    });
+
+    it("counts orders by their day in Owensboro, not in UTC", async () => {
+      // 7 pm in Owensboro on Nov 2 is already Nov 3 in UTC.
+      await db.query("INSERT INTO orders (customer_id, pickup_at) VALUES (1, '2026-11-02 19:00-06') RETURNING id");
+      await db.query("INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents) VALUES (7, 3, 5, 1899)");
+      const cookie = await signIn();
+      expect((await call("GET", "/kitchen/capacity?date=2026-11-02", undefined, cookie)).body.capacity.bookedPounds).toBe(5);
+      expect((await call("GET", "/kitchen/capacity?date=2026-11-03", undefined, cookie)).body.capacity.bookedPounds).toBe(0);
+    });
+
+    it("never reports less than nothing available", async () => {
+      await db.query("INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents) VALUES (6, 3, 150, 1899)");
+      const res = await call("GET", "/kitchen/capacity?date=2026-10-24", undefined, await signIn());
+      expect(res.body.capacity).toMatchObject({ bookedPounds: 170, availablePounds: 0 });
+    });
+
+    it("needs a valid date", async () => {
+      const cookie = await signIn();
+      for (const query of ["", "?date=tomorrow", "?date=2026-02-30"]) {
+        const res = await call("GET", `/kitchen/capacity${query}`, undefined, cookie);
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe("date must be a day, like 2026-10-24");
+      }
+    });
+
+    it("is for staff only", async () => {
+      expect((await call("GET", "/kitchen/capacity?date=2026-10-24")).status).toBe(401);
+    });
+  });
+
   it("loses access after signing out", async () => {
     const cookie = await signIn();
     await call("POST", "/auth/logout", undefined, cookie);

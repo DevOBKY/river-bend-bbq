@@ -4,7 +4,8 @@
     "test": "vitest run",
     "dev": "node --watch src/server.ts",
     "typecheck": "tsc -p .",
-    "eval": "node evals/planner.eval.ts"
+    "eval": "node evals/planner.eval.ts",
+    "agent": "node agent.ts"
   },
   "type": "module",
   "dependencies": {

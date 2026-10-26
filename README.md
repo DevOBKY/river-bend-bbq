@@ -3,12 +3,28 @@
 The reference code for the running example in [devOBKY](https://devobky.org)'s Building track:
 the catering-order system for River Bend BBQ, a (fictional) barbecue restaurant in Owensboro, KY.
 
-This branch is the system as it stands at the **end of A2** *Building with LLMs*: on top of the S2
-redesign, the API has a catering planner (`POST /catering/suggest`) that turns a description of an
-event into an order from the real menu, and an FAQ helper (`POST /catering/ask`) that answers only
-from River Bend's FAQ, plus an eval suite in `api/evals/`. Earlier states are on the
-[`main`](https://github.com/DevOBKY/river-bend-bbq/tree/main) branch (end of B4) and the
-[`s2-software-design`](https://github.com/DevOBKY/river-bend-bbq/tree/s2-software-design) branch.
+This branch is the system as it stands at the **end of A3** *Agentic Engineering*. On top of the
+[`a2-building-with-llms`](https://github.com/DevOBKY/river-bend-bbq/tree/a2-building-with-llms) branch
+(a catering planner, an FAQ helper, and an eval suite), it adds:
+
+- **A staff assistant agent** in `api/src/agent/`: a model in a loop with five tools, a permission
+  policy (reads run, changes wait for a person), step and change limits, and an audit log. Try it with
+  `npm run agent -- ready`, `-- hijack` (a prompt injection), or `-- loop` (an agent that never finishes).
+- **[`AGENTS.md`](AGENTS.md)**: instructions for AI coding agents working on this repository.
+- **[`docs/specs/`](docs/specs)**: a spec template, and spec 001, the kitchen capacity endpoint
+  (`GET /kitchen/capacity`), built from it with one test per acceptance criterion.
+- **A pull request template** that asks how a change was made and how it was checked.
+
+Earlier states are on the [`main`](https://github.com/DevOBKY/river-bend-bbq/tree/main) branch (end
+of B4) and the [`s2-software-design`](https://github.com/DevOBKY/river-bend-bbq/tree/s2-software-design)
+branch.
+
+**No AI in the agent demo.** The agent runs on `ScriptedModel`, which plays back a fixed script. It is
+not AI, it decides nothing, and the demo says so (`Model: scripted (not AI)`). That's enough to show
+and test everything around the model: the loop, the permissions, the limits, and the log. An adapter
+for a real model (`ClaudeAgentModel`) is included as an optional example; it's typechecked and its
+translation is tested with a fake client, but it has not been run against a live model by the course
+authors.
 
 **No API key needed.** By default, the planner and FAQ helper run on `DemoModel`: a rule-based
 stand-in that reads the same prompts a model would and answers with simple, fixed rules. It is not
@@ -81,6 +97,7 @@ cd api
 npm run typecheck
 npm test                 # unit and integration tests, in-memory database, fake and demo models
 npm run eval             # the planner eval, against DemoModel (free, not AI)
+npm run agent -- hijack  # the staff assistant on a scripted model (not AI); also: ready, loop
 npm run eval -- --fake   # against a naive fake that ignores the request
 npm run eval -- --claude # optional: against Claude (needs ANTHROPIC_API_KEY; costs money)
 
